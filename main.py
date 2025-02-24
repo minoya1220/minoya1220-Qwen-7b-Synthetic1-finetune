@@ -1,8 +1,15 @@
 import torch
 from datasets import load_dataset
-from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer
+from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer, TrainerCallback
 from peft import prepare_model_for_kbit_training
 import deepspeed
+import wandb
+
+# Add a WandB callback to log the loss
+class WandbCallback(TrainerCallback):
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs and "loss" in logs:
+            wandb.log({"loss": logs["loss"]})
 
 def prepare_model(model_name="Qwen/Qwen-7B"):
     """Load and prepare Qwen model for training"""
@@ -67,6 +74,9 @@ def train(
     max_length=2048,
 ):
     """Main training function optimized for 4x H100s"""
+    # Initialize wandb
+    wandb.init(project="qwen-synthetic1", name="4xh100-run")
+    
     model, tokenizer = prepare_model(model_name)
     
     # Prepare dataset
@@ -112,7 +122,7 @@ def train(
         bf16=True,
         gradient_checkpointing=True,
         deepspeed=ds_config,
-        report_to="tensorboard",
+        report_to=["tensorboard", "wandb"],  # Add wandb here
         # H100-specific optimizations
         dataloader_num_workers=8,  # Increased for H100s
         dataloader_pin_memory=True,
@@ -122,6 +132,9 @@ def train(
         ddp_find_unused_parameters=False,
     )
     
+    # Create our custom wandb callback
+    wandb_callback = WandbCallback()
+    
     # Initialize trainer
     trainer = Trainer(
         model=model,
@@ -130,7 +143,8 @@ def train(
         data_collator=lambda data: {
             'input_ids': torch.stack([f['input_ids'] for f in data]),
             'attention_mask': torch.stack([f['attention_mask'] for f in data])
-        }
+        },
+        callbacks=[wandb_callback]  # Add the callback here
     )
     
     # Train
@@ -138,6 +152,9 @@ def train(
     
     # Save final model
     trainer.save_model(output_dir)
+    
+    # Close wandb run
+    wandb.finish()
 
 if __name__ == "__main__":
     train(
