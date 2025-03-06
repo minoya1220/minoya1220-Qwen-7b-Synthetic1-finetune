@@ -4,3 +4,4 @@ __pycache__/
 synthetic1_output/
 .DS_Store
 .env
+test_dataset.py
