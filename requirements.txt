@@ -1,9 +1,13 @@
 # PyTorch packages 
 torch==2.6.0
+torchvision==0.21.0
+accelerate==0.30.1
  
 # Hugging Face libraries 
 transformers==4.37.2
 datasets==2.16.0
+tokenizers==0.15.1
+peft==0.8.2
  
 # DeepSpeed 
 deepspeed==0.16.4
@@ -15,3 +19,10 @@ wandb==0.16.3
 numpy==1.24.3
 tqdm==4.67.1
 tiktoken==0.9.0
+scipy==1.15.2
+scikit-learn==1.4.0
+pandas==2.2.2
+matplotlib==3.8.2
+jsonlines==4.0.0
+sentencepiece==0.1.99
+protobuf==4.25.1
