@@ -56,132 +56,99 @@ def download_dataset_locally(output_dir="./dataset_files"):
 def prepare_dataset(tokenizer, max_length=2048, val_split=0.05):
     """Prepare the SYNTHETIC-1 dataset with validation split"""
     print("\nPreparing dataset...")
-    try:
-        print("Attempting to load dataset...")
-        dataset = load_dataset("PrimeIntellect/SYNTHETIC-1-SFT-Data")
-        print(f"Dataset loaded successfully: {dataset is not None}")
-        print(f"Dataset keys: {dataset.keys()}")
-        if 'train' in dataset:
-            print(f"Train split size: {len(dataset['train'])}")
-            print(f"Sample record structure: {list(dataset['train'][0].keys())}")
-            print(f"First example messages count: {len(dataset['train'][0]['messages'])}")
-    except Exception as e:
-        print(f"Error loading dataset: {e}")
-        raise  # Critical failure in dataset loading
+    
+    # Load dataset
+    dataset = load_dataset("PrimeIntellect/SYNTHETIC-1-SFT-Data")
+    print(f"Dataset loaded with {len(dataset['train'])} examples")
     
     # Split into train and validation
-    print("\nSplitting dataset into train and validation...")
     dataset = dataset["train"].train_test_split(test_size=val_split, seed=42)
-    print(f"After split - Train: {len(dataset['train'])}, Validation: {len(dataset['test'])}")
+    print(f"Split into train ({len(dataset['train'])}) and validation ({len(dataset['test'])}) sets")
     
+    # Format conversations
     def format_conversation(example):
+        """Convert the messages format to a simple text format"""
         try:
-            # Format into chat format 
-            messages = example['messages']
-            
-            # Verify messages structure
+            if not isinstance(example, dict) or 'messages' not in example:
+                return {"formatted_text": ""}
+                
+            messages = example.get('messages', [])
             if not isinstance(messages, list) or len(messages) == 0:
-                print(f"Warning: Invalid messages format in example {example.get('response_id', 'unknown')}")
                 return {"formatted_text": ""}
             
             formatted = ""
             for msg in messages:
-                if not isinstance(msg, dict) or 'role' not in msg or 'content' not in msg:
-                    print(f"Warning: Invalid message format in example {example.get('response_id', 'unknown')}")
+                if not isinstance(msg, dict):
                     continue
+                    
+                role = msg.get('role', '')
+                content = msg.get('content', '')
                 
-                role = msg['role']
-                content = msg['content']
+                if not isinstance(role, str):
+                    role = str(role)
+                if not isinstance(content, str):
+                    content = str(content)
                 
-                # Keep the thinking process intact - it's crucial for training
                 formatted += f"{role}: {content}\n\n"
             
             return {"formatted_text": formatted}
         except Exception as e:
-            print(f"Error formatting example {example.get('response_id', 'unknown')}: {e}")
+            print(f"Error formatting example: {e}")
             return {"formatted_text": ""}
     
-    # Apply formatting to prepare chat format
+    # Apply formatting
     print("\nFormatting conversations...")
-    try:
-        formatted_dataset = dataset.map(
-            format_conversation,
-            num_proc=16,
-            desc="Formatting conversations"
-        )
-        print("Formatting complete.")
-        
-        # Test a sample formatted conversation
-        print("\nSample formatted conversation:")
-        sample_idx = 0
-        print(formatted_dataset['train'][sample_idx]['formatted_text'][:500] + "...")
-        
-        # Filter out empty examples
-        print("\nFiltering out empty examples...")
-        formatted_dataset = formatted_dataset.filter(
-            lambda example: len(example['formatted_text']) > 0,
-            num_proc=16,
-            desc="Filtering empty examples"
-        )
-        print(f"After filtering - Train: {len(formatted_dataset['train'])}, Validation: {len(formatted_dataset['test'])}")
-    except Exception as e:
-        print(f"Error formatting dataset: {e}")
-        raise
+    formatted_dataset = dataset.map(
+        format_conversation,
+        num_proc=8,
+        desc="Formatting conversations"
+    )
     
+    # Filter out empty examples
+    formatted_dataset = formatted_dataset.filter(
+        lambda example: len(example.get('formatted_text', '')) > 0
+    )
+    print(f"After formatting: Train ({len(formatted_dataset['train'])}), Validation ({len(formatted_dataset['test'])})")
+    
+    # Tokenize the dataset
     def tokenize_function(examples):
+        """Tokenize the formatted text"""
         try:
+            # Handle both single examples and batches
+            texts = examples["formatted_text"]
+            if not isinstance(texts, list):
+                texts = [texts]
+            
+            # Ensure all texts are strings
+            texts = [str(text) if not isinstance(text, str) else text for text in texts]
+            
             return tokenizer(
-                examples["formatted_text"],
+                texts,
                 max_length=max_length,
                 truncation=True,
-                padding=False  # We'll handle padding in the data collator
+                padding=False
             )
         except Exception as e:
-            print(f"Error tokenizing examples: {e}")
-            # Return empty tokenized examples as fallback
-            return {"input_ids": [[]], "attention_mask": [[]]} * len(examples["formatted_text"])
+            print(f"Error tokenizing: {e}")
+            batch_size = len(examples["formatted_text"]) if isinstance(examples["formatted_text"], list) else 1
+            return {"input_ids": [[]] * batch_size, "attention_mask": [[]] * batch_size}
     
-    # Process dataset in parallel
+    # Apply tokenization
     print("\nTokenizing dataset...")
-    try:
-        tokenized_dataset = formatted_dataset.map(
-            tokenize_function,
-            batched=True,
-            remove_columns=formatted_dataset["train"].column_names,
-            num_proc=16,
-            desc="Tokenizing dataset"
-        )
-        
-        # Verify tokenization
-        print("\nVerifying tokenization...")
-        if len(tokenized_dataset['train']) > 0:
-            sample = tokenized_dataset['train'][0]
-            print(f"Sample tokenized shape - Input IDs: {len(sample['input_ids'])}, Attention Mask: {len(sample['attention_mask'])}")
-            
-            # Check for extremely long sequences
-            lengths = [len(sample['input_ids']) for sample in tokenized_dataset['train'][:100]]
-            avg_length = sum(lengths) / len(lengths)
-            max_length_found = max(lengths)
-            print(f"Average sequence length (first 100 samples): {avg_length:.1f}")
-            print(f"Maximum sequence length (first 100 samples): {max_length_found}")
-            
-            # Filter out examples that are too short
-            print("\nFiltering out examples that are too short...")
-            min_length = 10  # Adjust as needed
-            tokenized_dataset = tokenized_dataset.filter(
-                lambda example: len(example['input_ids']) >= min_length,
-                num_proc=16,
-                desc="Filtering short examples"
-            )
-            print(f"After filtering - Train: {len(tokenized_dataset['train'])}, Validation: {len(tokenized_dataset['test'])}")
-        else:
-            print("Warning: No examples in tokenized dataset!")
-    except Exception as e:
-        print(f"Error tokenizing dataset: {e}")
-        raise
+    tokenized_dataset = formatted_dataset.map(
+        tokenize_function,
+        batched=True,
+        remove_columns=formatted_dataset["train"].column_names,
+        num_proc=8,
+        desc="Tokenizing dataset"
+    )
     
-    print(f"Final train dataset size: {len(tokenized_dataset['train'])}")
-    print(f"Final validation dataset size: {len(tokenized_dataset['test'])}")
+    # Filter out examples that are too short
+    min_length = 10
+    tokenized_dataset = tokenized_dataset.filter(
+        lambda example: len(example.get('input_ids', [])) >= min_length
+    )
+    print(f"Final dataset: Train ({len(tokenized_dataset['train'])}), Validation ({len(tokenized_dataset['test'])})")
     
     return tokenized_dataset
 

@@ -42,7 +42,10 @@ install_pip() {
     echo -e "${YELLOW}Installing pip...${NC}"
     curl -sSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py
     python get-pip.py
-    rm get-pip.py
+    # Check if file exists before removing
+    if [ -f "get-pip.py" ]; then
+        rm get-pip.py
+    fi
     echo -e "${GREEN}pip installation completed.${NC}"
 }
 
@@ -83,17 +86,24 @@ if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" 
 fi
 
 # Check if pip is installed
-if ! command -v pip &> /dev/null; then
+if ! command -v pip &> /dev/null && ! command -v pip3 &> /dev/null; then
     echo -e "${YELLOW}pip is not installed. Attempting to install pip...${NC}"
     install_pip
     
-    # Check again if pip is installed
-    if ! command -v pip &> /dev/null; then
+    # Check again if pip is installed (check both pip and pip3)
+    if ! command -v pip &> /dev/null && ! command -v pip3 &> /dev/null; then
         echo -e "${RED}pip installation failed. Please install pip manually and try again.${NC}"
         exit 1
     fi
     
     echo -e "${GREEN}Successfully installed pip${NC}"
+fi
+
+# Set the correct pip command to use
+if command -v pip &> /dev/null; then
+    PIP_CMD="pip"
+elif command -v pip3 &> /dev/null; then
+    PIP_CMD="pip3"
 fi
 
 # Check if CUDA is available (optional)
@@ -124,7 +134,11 @@ fi
 
 # Install requirements
 echo -e "${GREEN}Installing requirements from requirements.txt...${NC}"
-pip install -r requirements.txt
+$PIP_CMD install -r requirements.txt
+
+# Install transformers_stream_generator
+echo -e "${GREEN}Installing transformers_stream_generator...${NC}"
+$PIP_CMD install transformers_stream_generator
 
 # Check installation status
 if [ $? -eq 0 ]; then

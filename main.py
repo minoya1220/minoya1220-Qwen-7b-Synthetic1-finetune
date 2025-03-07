@@ -18,6 +18,7 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=2e-5, help="Learning rate")
     parser.add_argument("--max_length", type=int, default=2048, help="Maximum sequence length")
     parser.add_argument("--val_split", type=float, default=0.05, help="Validation split ratio")
+    parser.add_argument("--local_rank", type=int, default=-1, help="Local rank for distributed training")
     
     args = parser.parse_args()
     
