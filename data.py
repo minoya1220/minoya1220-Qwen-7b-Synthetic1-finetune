@@ -61,9 +61,26 @@ def prepare_dataset(tokenizer, max_length=2048, val_split=0.05):
     dataset = load_dataset("PrimeIntellect/SYNTHETIC-1-SFT-Data")
     print(f"Dataset loaded with {len(dataset['train'])} examples")
     
-    # Early validation - check if dataset is empty
-    if len(dataset['train']) == 0:
-        raise ValueError("Dataset is empty after loading!")
+    # ADD DEBUG CODE HERE - Print sample examples to understand structure
+    print("\n==== DATASET STRUCTURE DEBUG ====")
+    print("Examining 3 sample examples from the dataset:")
+    
+    for i in range(min(3, len(dataset['train']))):
+        example = dataset['train'][i]
+        print(f"\nSample {i+1}:")
+        # First print the keys to understand the structure
+        print(f"Keys in example: {list(example.keys())}")
+        
+        # Try to pretty print the example, handling potential serialization issues
+        try:
+            print(json.dumps(example, indent=2, default=str))
+        except:
+            # If JSON serialization fails, print keys and values individually
+            print("Cannot JSON serialize the example. Printing keys and values separately:")
+            for key, value in example.items():
+                print(f"  {key}: {type(value)} - Sample: {str(value)[:100]}...")
+    
+    print("==== END DEBUG ====\n")
     
     # Split into train and validation
     dataset = dataset["train"].train_test_split(test_size=val_split, seed=42)
