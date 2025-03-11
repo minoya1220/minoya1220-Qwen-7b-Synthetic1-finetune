@@ -23,9 +23,9 @@ def create_deepspeed_config(batch_size, gradient_accumulation_steps):
         },
         "bf16": {"enabled": torch.cuda.is_available()},
         "gradient_clipping": 1.0,
-        "train_batch_size": batch_size * torch.cuda.device_count(),
-        "train_micro_batch_size_per_gpu": batch_size,
-        "gradient_accumulation_steps": gradient_accumulation_steps,
+        "train_batch_size": "auto",  # Change to auto
+        "train_micro_batch_size_per_gpu": "auto",  # Change to auto
+        "gradient_accumulation_steps": "auto",  # Change to auto
         "steps_per_print": 50,
         "wall_clock_breakdown": False
     }
