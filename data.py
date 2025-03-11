@@ -5,30 +5,39 @@ from datasets import load_dataset
 from tqdm import tqdm
 
 def explore_dataset_structure():
-    """Explore the SYNTHETIC-1 dataset structure properly"""
+    """Explore and print the structure of the SYNTHETIC-1 dataset in detail"""
     print("\n===== EXPLORING DATASET STRUCTURE =====")
     
+    # Load dataset
+    print("Loading dataset...")
     dataset = load_dataset("PrimeIntellect/SYNTHETIC-1-SFT-Data")
-    print(f"Dataset splits: {list(dataset.keys())}")
     
-    example = dataset['train'][0]
-    print(f"\nTop-level keys: {list(example.keys())}")
+    # Print basic dataset info
+    print(f"\nDataset splits: {list(dataset.keys())}")
+    print(f"Number of examples in train split: {len(dataset['train'])}")
     
-    # Properly explore the messages field
-    if 'messages' in example:
-        print("\n----- Messages Structure -----")
-        messages = example['messages']
-        print(f"Number of messages: {len(messages)}")
+    # Get a sample example
+    if len(dataset['train']) > 0:
+        example = dataset['train'][0]
+        print("\n----- Sample Example Structure -----")
+        print(f"Top-level keys: {list(example.keys())}")
         
-        for i, msg in enumerate(messages):
-            print(f"\nMessage {i}:")
-            print(f"Role: {msg.get('role', 'unknown')}")
-            content = msg.get('content', '')
-            print(f"Content preview: {content[:100]}...")
+        # Debug: Check if 'messages' exists and its format
+        if 'messages' in example:
+            messages = example['messages']
+            print(f"Messages field type: {type(messages)}")
+            print(f"Messages count: {len(messages)}")
             
-            # Check if this is an assistant message with thinking
-            if msg.get('role') == 'assistant' and '<think>' in content:
-                print("Contains thinking section: Yes")
+            # Print first message structure
+            if len(messages) > 0:
+                print("\nFirst message structure:")
+                first_msg = messages[0]
+                print(f"Message keys: {list(first_msg.keys())}")
+                print(f"Role: {first_msg.get('role', 'unknown')}")
+                content = first_msg.get('content', '')
+                print(f"Content preview: {content[:100]}...")
+    else:
+        print("WARNING: Train split is empty!")
     
     return dataset
 
@@ -130,10 +139,12 @@ def format_conversation(example):
     """Convert the messages format to a simple text format"""
     try:
         if not isinstance(example, dict) or 'messages' not in example:
+            print(f"Example missing 'messages' field: {example.keys()}")
             return {"formatted_text": ""}
             
         messages = example.get('messages', [])
         if not isinstance(messages, list) or len(messages) == 0:
+            print(f"Invalid messages format: {type(messages)}")
             return {"formatted_text": ""}
         
         formatted = ""
@@ -149,8 +160,20 @@ def format_conversation(example):
             if not isinstance(content, str):
                 content = str(content)
             
-            formatted += f"{role}: {content}\n\n"
+            # Add proper formatting to distinguish user/assistant roles
+            if role == "user":
+                formatted += f"USER: {content}\n\n"
+            elif role == "assistant":
+                # Check if it has thinking section to preserve it
+                if "<think>" in content and "</think>" in content:
+                    formatted += f"ASSISTANT: {content}\n\n"
+                else:
+                    formatted += f"ASSISTANT: {content}\n\n"
         
+        # Add debugging to see if we're getting valid formatted text
+        if len(formatted) < 10:
+            print(f"WARNING: Short formatted text: '{formatted}'")
+            
         return {"formatted_text": formatted}
     except Exception as e:
         print(f"Error formatting example: {e}")
