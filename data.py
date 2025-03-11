@@ -41,52 +41,6 @@ def explore_dataset_structure():
     
     return dataset
 
-def download_dataset_locally(output_dir="./dataset_files"):
-    """Download the SYNTHETIC-1 dataset to local machine"""
-    print(f"\nDownloading dataset to {output_dir}...")
-    
-    # Create output directory if it doesn't exist
-    os.makedirs(output_dir, exist_ok=True)
-    
-    try:
-        # Load the dataset
-        dataset = load_dataset("PrimeIntellect/SYNTHETIC-1-SFT-Data")
-        print(f"Dataset loaded successfully: {dataset is not None}")
-        
-        if 'train' in dataset:
-            # Save dataset info
-            with open(os.path.join(output_dir, "dataset_info.json"), "w") as f:
-                info = {
-                    "total_examples": len(dataset['train']),
-                    "keys": list(dataset['train'][0].keys()),
-                    "sample_message_count": len(dataset['train'][0]['messages'])
-                }
-                json.dump(info, f, indent=2)
-            
-            # Save a sample of examples (first 100)
-            sample_size = min(100, len(dataset['train']))
-            
-            # Save each example as a separate JSON file
-            for i in range(sample_size):
-                example = dataset['train'][i]
-                with open(os.path.join(output_dir, f"example_{i}.json"), "w") as f:
-                    json.dump(example, f, indent=2)
-            
-            # Save a few complete examples in a single file
-            with open(os.path.join(output_dir, "sample_examples.json"), "w") as f:
-                samples_list = dataset['train'][:sample_size]
-                json.dump(samples_list, f, indent=2)
-            
-            print(f"Dataset downloaded successfully to {output_dir}")
-            print(f"Saved {sample_size} individual examples and dataset info")
-            return dataset
-        
-        else:
-            print("Error: 'train' split not found in dataset")
-            return None
-    except Exception as e:
-        print(f"Error downloading dataset: {e}")
-        raise
 
 def prepare_dataset(tokenizer, max_length=2048, val_split=0.05):
     """Prepare the SYNTHETIC-1 dataset with validation split"""
@@ -96,12 +50,13 @@ def prepare_dataset(tokenizer, max_length=2048, val_split=0.05):
     dataset = explore_dataset_structure()
     
     # Split into train and validation
+    print(val_split)
     dataset = dataset["train"].train_test_split(test_size=val_split, seed=42)
     print(f"Split into train ({len(dataset['train'])}) and validation ({len(dataset['test'])}) sets")
     
     # Format conversations
     print("\nFormatting conversations...")
-    formatted_dataset = dataset.map(
+    formatted_dataset = dataset.map( 
         format_conversation,
         num_proc=8,
         desc="Formatting conversations"
@@ -122,16 +77,10 @@ def prepare_dataset(tokenizer, max_length=2048, val_split=0.05):
         desc="Tokenizing dataset"
     )
     
-    # Filter out examples that are too short
-    min_length = 10
-    tokenized_dataset = tokenized_dataset.filter(
-        lambda example: len(example.get('input_ids', [])) >= min_length
-    )
-    print(f"Final dataset: Train ({len(tokenized_dataset['train'])}), Validation ({len(tokenized_dataset['test'])})")
     
     # Additional validation after tokenization and filtering
     if len(tokenized_dataset['train']) == 0 or len(tokenized_dataset['test']) == 0:
-        raise ValueError("Dataset is empty after tokenization and filtering! Consider adjusting min_length or check tokenization.")
+        raise ValueError("Dataset is empty after tokenization! Consider adjusting min_length or check tokenization.")
     
     return tokenized_dataset
 
@@ -155,10 +104,6 @@ def format_conversation(example):
             role = msg.get('role', '')
             content = msg.get('content', '')
             
-            if not isinstance(role, str):
-                role = str(role)
-            if not isinstance(content, str):
-                content = str(content)
             
             # Add proper formatting to distinguish user/assistant roles
             if role == "user":
