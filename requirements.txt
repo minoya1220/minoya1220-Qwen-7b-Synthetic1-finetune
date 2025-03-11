@@ -11,6 +11,7 @@ tokenizers==0.15.1
 peft==0.8.2
 transformers_stream_generator
 huggingface_hub==0.20.3
+datasets==2.16.0
  
 # DeepSpeed 
 deepspeed==0.16.4
