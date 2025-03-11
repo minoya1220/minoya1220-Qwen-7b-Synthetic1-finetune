@@ -104,8 +104,8 @@ def format_conversation(example):
             if not isinstance(msg, dict):
                 continue
                 
-            role = msg['role']
-            content = msg['content']
+            role = msg["role"]
+            content = msg["content"]
             
             # Add proper formatting to distinguish user/assistant roles
             if role == "user":
