@@ -1,8 +1,89 @@
+import os
+import json
 import torch
 from datasets import load_dataset
 from tqdm import tqdm
-import os
-import json
+
+def explore_dataset_structure():
+    """Explore and print the structure of the SYNTHETIC-1 dataset in detail"""
+    print("\n===== EXPLORING DATASET STRUCTURE =====")
+    
+    # Load dataset
+    print("Loading dataset...")
+    dataset = load_dataset("PrimeIntellect/SYNTHETIC-1-SFT-Data")
+    
+    # Print basic dataset info
+    print(f"\nDataset splits: {list(dataset.keys())}")
+    print(f"Number of examples in train split: {len(dataset['train'])}")
+    
+    # Get a sample example
+    example = dataset['train'][0]
+    
+    # Print top-level keys
+    print("\n----- Sample Example Structure -----")
+    print(f"Top-level keys: {list(example.keys())}")
+    
+    # Print detailed information about each key and its value
+    for key in example:
+        value = example[key]
+        print(f"\n• {key} ({type(value).__name__}):")
+        
+        # Handle different types of values
+        if isinstance(value, list):
+            print(f"  List with {len(value)} items")
+            if len(value) > 0:
+                print("  First item type:", type(value[0]).__name__)
+                
+                # If it's a list of dictionaries, show the keys of the first dict
+                if len(value) > 0 and isinstance(value[0], dict):
+                    print(f"  First item keys: {list(value[0].keys())}")
+                    
+                    # Show sample of the first item's content
+                    for subkey, subvalue in value[0].items():
+                        subtype = type(subvalue).__name__
+                        subvalue_display = str(subvalue)
+                        if len(subvalue_display) > 100:
+                            subvalue_display = subvalue_display[:100] + "..."
+                        print(f"    - {subkey} ({subtype}): {subvalue_display}")
+                
+                # Show a sample of the list contents
+                print("\n  Sample of list contents:")
+                list_sample = value[:min(3, len(value))]
+                try:
+                    print(json.dumps(list_sample, indent=2, default=str)[:500])
+                    if len(json.dumps(list_sample, default=str)) > 500:
+                        print("    ...")
+                except:
+                    print(f"    [Cannot serialize - {type(value[0])}]")
+        
+        elif isinstance(value, dict):
+            print(f"  Dictionary with {len(value)} keys")
+            print(f"  Keys: {list(value.keys())}")
+            # Show sample of the dict contents
+            try:
+                print("  Sample of dict contents:")
+                print(json.dumps(value, indent=2, default=str)[:500])
+                if len(json.dumps(value, default=str)) > 500:
+                    print("    ...")
+            except:
+                print(f"    [Cannot serialize - {type(value)}]")
+        
+        elif isinstance(value, str):
+            if len(value) > 100:
+                print(f"  {value[:100]}...")
+            else:
+                print(f"  {value}")
+        else:
+            print(f"  {value}")
+    
+    # Print a complete example for reference
+    print("\n----- Complete Sample Example -----")
+    try:
+        print(json.dumps(example, indent=2, default=str))
+    except:
+        print("Cannot serialize the complete example to JSON")
+    
+    return dataset
 
 def download_dataset_locally(output_dir="./dataset_files"):
     """Download the SYNTHETIC-1 dataset to local machine"""
@@ -32,13 +113,11 @@ def download_dataset_locally(output_dir="./dataset_files"):
             # Save each example as a separate JSON file
             for i in range(sample_size):
                 example = dataset['train'][i]
-                # Save directly without converting to dict
                 with open(os.path.join(output_dir, f"example_{i}.json"), "w") as f:
                     json.dump(example, f, indent=2)
             
             # Save a few complete examples in a single file
             with open(os.path.join(output_dir, "sample_examples.json"), "w") as f:
-                # Save directly as a list without converting to dict
                 samples_list = dataset['train'][:sample_size]
                 json.dump(samples_list, f, indent=2)
             
@@ -57,61 +136,14 @@ def prepare_dataset(tokenizer, max_length=2048, val_split=0.05):
     """Prepare the SYNTHETIC-1 dataset with validation split"""
     print("\nPreparing dataset...")
     
-    # Load dataset
-    dataset = load_dataset("PrimeIntellect/SYNTHETIC-1-SFT-Data")
-    print(f"Dataset loaded with {len(dataset['train'])} examples")
-    
-    # Print sample example structure
-    example = dataset['train'][0]
-    print("\nSample example structure:")
-    print(f"Keys: {list(example.keys())}")
-    for key in example:
-        value = example[key]
-        print(f"\n{key} ({type(value)}):")
-        if isinstance(value, (list, dict)):
-            try:
-                print(json.dumps(value, indent=2, default=str)[:500] + "...")
-            except:
-                print(f"  [Cannot serialize - {type(value)}]")
-        else:
-            print(f"  {value}")
+    # First explore the dataset structure
+    dataset = explore_dataset_structure()
     
     # Split into train and validation
     dataset = dataset["train"].train_test_split(test_size=val_split, seed=42)
     print(f"Split into train ({len(dataset['train'])}) and validation ({len(dataset['test'])}) sets")
     
     # Format conversations
-    def format_conversation(example):
-        """Convert the messages format to a simple text format"""
-        try:
-            if not isinstance(example, dict) or 'messages' not in example:
-                return {"formatted_text": ""}
-                
-            messages = example.get('messages', [])
-            if not isinstance(messages, list) or len(messages) == 0:
-                return {"formatted_text": ""}
-            
-            formatted = ""
-            for msg in messages:
-                if not isinstance(msg, dict):
-                    continue
-                    
-                role = msg.get('role', '')
-                content = msg.get('content', '')
-                
-                if not isinstance(role, str):
-                    role = str(role)
-                if not isinstance(content, str):
-                    content = str(content)
-                
-                formatted += f"{role}: {content}\n\n"
-            
-            return {"formatted_text": formatted}
-        except Exception as e:
-            print(f"Error formatting example: {e}")
-            return {"formatted_text": ""}
-    
-    # Apply formatting
     print("\nFormatting conversations...")
     formatted_dataset = dataset.map(
         format_conversation,
@@ -119,41 +151,15 @@ def prepare_dataset(tokenizer, max_length=2048, val_split=0.05):
         desc="Formatting conversations"
     )
     
-    # Comment out or modify this filter
-    # formatted_dataset = formatted_dataset.filter(
-    #     lambda example: len(example.get('formatted_text', '')) > 0
-    # )
-    # Instead, just print a warning if the dataset would be empty
-    if all(len(example.get('formatted_text', '')) == 0 for example in formatted_dataset['train']):
-        print("WARNING: All examples have empty formatted_text!")
+    # Check if any examples have empty formatted text
+    empty_count_train = sum(1 for example in formatted_dataset['train'] if len(example.get('formatted_text', '')) == 0)
+    if empty_count_train > 0:
+        print(f"WARNING: {empty_count_train} examples in train set have empty formatted_text!")
     
     # Tokenize the dataset
-    def tokenize_function(examples):
-        """Tokenize the formatted text"""
-        try:
-            # Handle both single examples and batches
-            texts = examples["formatted_text"]
-            if not isinstance(texts, list):
-                texts = [texts]
-            
-            # Ensure all texts are strings
-            texts = [str(text) if not isinstance(text, str) else text for text in texts]
-            
-            return tokenizer(
-                texts,
-                max_length=max_length,
-                truncation=True,
-                padding=False
-            )
-        except Exception as e:
-            print(f"Error tokenizing: {e}")
-            batch_size = len(examples["formatted_text"]) if isinstance(examples["formatted_text"], list) else 1
-            return {"input_ids": [[]] * batch_size, "attention_mask": [[]] * batch_size}
-    
-    # Apply tokenization
     print("\nTokenizing dataset...")
     tokenized_dataset = formatted_dataset.map(
-        tokenize_function,
+        lambda examples: tokenize_function(examples, tokenizer, max_length),
         batched=True,
         remove_columns=formatted_dataset["train"].column_names,
         num_proc=8,
@@ -172,6 +178,58 @@ def prepare_dataset(tokenizer, max_length=2048, val_split=0.05):
         raise ValueError("Dataset is empty after tokenization and filtering! Consider adjusting min_length or check tokenization.")
     
     return tokenized_dataset
+
+def format_conversation(example):
+    """Convert the messages format to a simple text format"""
+    try:
+        if not isinstance(example, dict) or 'messages' not in example:
+            return {"formatted_text": ""}
+            
+        messages = example.get('messages', [])
+        if not isinstance(messages, list) or len(messages) == 0:
+            return {"formatted_text": ""}
+        
+        formatted = ""
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+                
+            role = msg.get('role', '')
+            content = msg.get('content', '')
+            
+            if not isinstance(role, str):
+                role = str(role)
+            if not isinstance(content, str):
+                content = str(content)
+            
+            formatted += f"{role}: {content}\n\n"
+        
+        return {"formatted_text": formatted}
+    except Exception as e:
+        print(f"Error formatting example: {e}")
+        return {"formatted_text": ""}
+
+def tokenize_function(examples, tokenizer, max_length):
+    """Tokenize the formatted text"""
+    try:
+        # Handle both single examples and batches
+        texts = examples["formatted_text"]
+        if not isinstance(texts, list):
+            texts = [texts]
+        
+        # Ensure all texts are strings
+        texts = [str(text) if not isinstance(text, str) else text for text in texts]
+        
+        return tokenizer(
+            texts,
+            max_length=max_length,
+            truncation=True,
+            padding=False
+        )
+    except Exception as e:
+        print(f"Error tokenizing: {e}")
+        batch_size = len(examples["formatted_text"]) if isinstance(examples["formatted_text"], list) else 1
+        return {"input_ids": [[]] * batch_size, "attention_mask": [[]] * batch_size}
 
 def create_data_collator(tokenizer, max_length=2048):
     """Create a data collator with dynamic padding"""
@@ -235,3 +293,8 @@ def create_data_collator(tokenizer, max_length=2048):
         print("This could indicate issues during training.")
     
     return collate_fn
+
+# If you want to run this file directly for exploration
+if __name__ == "__main__":
+    print("Running data exploration...")
+    explore_dataset_structure()
