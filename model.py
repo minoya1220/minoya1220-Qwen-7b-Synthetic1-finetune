@@ -18,13 +18,11 @@ def prepare_model(model_name="Qwen/Qwen-7B"):
     # Load model with appropriate precision
     print(f"Loading model from {model_name}...")
     dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-    device_map = "auto" if torch.cuda.is_available() else None
     
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         trust_remote_code=True,
-        torch_dtype=dtype,
-        device_map=device_map
+        torch_dtype=dtype
     )
     
     # Disable KV cache for training
