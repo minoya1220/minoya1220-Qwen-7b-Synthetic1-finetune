@@ -5,83 +5,30 @@ from datasets import load_dataset
 from tqdm import tqdm
 
 def explore_dataset_structure():
-    """Explore and print the structure of the SYNTHETIC-1 dataset in detail"""
+    """Explore the SYNTHETIC-1 dataset structure properly"""
     print("\n===== EXPLORING DATASET STRUCTURE =====")
     
-    # Load dataset
-    print("Loading dataset...")
     dataset = load_dataset("PrimeIntellect/SYNTHETIC-1-SFT-Data")
+    print(f"Dataset splits: {list(dataset.keys())}")
     
-    # Print basic dataset info
-    print(f"\nDataset splits: {list(dataset.keys())}")
-    print(f"Number of examples in train split: {len(dataset['train'])}")
-    
-    # Get a sample example
     example = dataset['train'][0]
+    print(f"\nTop-level keys: {list(example.keys())}")
     
-    # Print top-level keys
-    print("\n----- Sample Example Structure -----")
-    print(f"Top-level keys: {list(example.keys())}")
-    
-    # Print detailed information about each key and its value
-    for key in example:
-        value = example[key]
-        print(f"\n• {key} ({type(value).__name__}):")
+    # Properly explore the messages field
+    if 'messages' in example:
+        print("\n----- Messages Structure -----")
+        messages = example['messages']
+        print(f"Number of messages: {len(messages)}")
         
-        # Handle different types of values
-        if isinstance(value, list):
-            print(f"  List with {len(value)} items")
-            if len(value) > 0:
-                print("  First item type:", type(value[0]).__name__)
-                
-                # If it's a list of dictionaries, show the keys of the first dict
-                if len(value) > 0 and isinstance(value[0], dict):
-                    print(f"  First item keys: {list(value[0].keys())}")
-                    
-                    # Show sample of the first item's content
-                    for subkey, subvalue in value[0].items():
-                        subtype = type(subvalue).__name__
-                        subvalue_display = str(subvalue)
-                        if len(subvalue_display) > 100:
-                            subvalue_display = subvalue_display[:100] + "..."
-                        print(f"    - {subkey} ({subtype}): {subvalue_display}")
-                
-                # Show a sample of the list contents
-                print("\n  Sample of list contents:")
-                list_sample = value[:min(3, len(value))]
-                try:
-                    print(json.dumps(list_sample, indent=2, default=str)[:500])
-                    if len(json.dumps(list_sample, default=str)) > 500:
-                        print("    ...")
-                except:
-                    print(f"    [Cannot serialize - {type(value[0])}]")
-        
-        elif isinstance(value, dict):
-            print(f"  Dictionary with {len(value)} keys")
-            print(f"  Keys: {list(value.keys())}")
-            # Show sample of the dict contents
-            try:
-                print("  Sample of dict contents:")
-                print(json.dumps(value, indent=2, default=str)[:500])
-                if len(json.dumps(value, default=str)) > 500:
-                    print("    ...")
-            except:
-                print(f"    [Cannot serialize - {type(value)}]")
-        
-        elif isinstance(value, str):
-            if len(value) > 100:
-                print(f"  {value[:100]}...")
-            else:
-                print(f"  {value}")
-        else:
-            print(f"  {value}")
-    
-    # Print a complete example for reference
-    print("\n----- Complete Sample Example -----")
-    try:
-        print(json.dumps(example, indent=2, default=str))
-    except:
-        print("Cannot serialize the complete example to JSON")
+        for i, msg in enumerate(messages):
+            print(f"\nMessage {i}:")
+            print(f"Role: {msg.get('role', 'unknown')}")
+            content = msg.get('content', '')
+            print(f"Content preview: {content[:100]}...")
+            
+            # Check if this is an assistant message with thinking
+            if msg.get('role') == 'assistant' and '<think>' in content:
+                print("Contains thinking section: Yes")
     
     return dataset
 
