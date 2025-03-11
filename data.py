@@ -4,6 +4,12 @@ import torch
 from datasets import load_dataset
 from tqdm import tqdm
 
+# Initialize counters before processing
+missing_messages_count = 0
+invalid_messages_count = 0
+short_text_count = 0
+formatting_error_count = 0
+
 def explore_dataset_structure():
     """Explore and print the structure of the SYNTHETIC-1 dataset in detail"""
     print("\n===== EXPLORING DATASET STRUCTURE =====")
@@ -18,24 +24,7 @@ def explore_dataset_structure():
     
     # Get a sample example
     if len(dataset['train']) > 0:
-        example = dataset['train'][0]
-        print("\n----- Sample Example Structure -----")
-        print(f"Top-level keys: {list(example.keys())}")
-        
-        # Debug: Check if 'messages' exists and its format
-        if 'messages' in example:
-            messages = example['messages']
-            print(f"Messages field type: {type(messages)}")
-            print(f"Messages count: {len(messages)}")
-            
-            # Print first message structure
-            if len(messages) > 0:
-                print("\nFirst message structure:")
-                first_msg = messages[0]
-                print(f"Message keys: {list(first_msg.keys())}")
-                print(f"Role: {first_msg.get('role', 'unknown')}")
-                content = first_msg.get('content', '')
-                print(f"Content preview: {content[:100]}...")
+        print("we good, train split is not empty")
     else:
         print("WARNING: Train split is empty!")
     
@@ -62,6 +51,15 @@ def prepare_dataset(tokenizer, max_length=2048, val_split=0.05):
         desc="Formatting conversations"
     )
     
+    # Print summary instead of individual examples
+    print(f"\nDataset processing complete. Issues found:")
+    print(f"- Missing 'messages' field: {missing_messages_count} examples")
+    print(f"- Invalid messages format: {invalid_messages_count} examples")
+    print(f"- Suspiciously short text: {short_text_count} examples")
+    print(f"- Formatting errors: {formatting_error_count} examples")
+    
+    # Optionally log a few examples of each problem type for debugging
+    
     # Check if any examples have empty formatted text
     empty_count_train = sum(1 for example in formatted_dataset['train'] if len(example.get('formatted_text', '')) == 0)
     if empty_count_train > 0:
@@ -86,14 +84,19 @@ def prepare_dataset(tokenizer, max_length=2048, val_split=0.05):
 
 def format_conversation(example):
     """Convert the messages format to a simple text format"""
+    # Use a global or class-level counter system
+    global missing_messages_count, invalid_messages_count, short_text_count, formatting_error_count
+    
     try:
         if not isinstance(example, dict) or 'messages' not in example:
-            print(f"Example missing 'messages' field: {example.keys()}")
+            # Increment counter instead of printing
+            missing_messages_count += 1
             return {"formatted_text": ""}
             
         messages = example.get('messages', [])
         if not isinstance(messages, list) or len(messages) == 0:
-            print(f"Invalid messages format: {type(messages)}")
+            # Increment counter instead of printing
+            invalid_messages_count += 1
             return {"formatted_text": ""}
         
         formatted = ""
@@ -103,7 +106,6 @@ def format_conversation(example):
                 
             role = msg['role']
             content = msg['content']
-            
             
             # Add proper formatting to distinguish user/assistant roles
             if role == "user":
@@ -115,13 +117,14 @@ def format_conversation(example):
                 else:
                     formatted += f"ASSISTANT: {content}\n\n"
         
-        # Add debugging to see if we're getting valid formatted text
+        # Add counter for short formatted text instead of printing it
         if len(formatted) < 10:
-            print(f"WARNING: Short formatted text: '{formatted}'")
+            short_text_count += 1
             
         return {"formatted_text": formatted}
     except Exception as e:
-        print(f"Error formatting example: {e}")
+        # Increment error counter instead of printing
+        formatting_error_count += 1
         return {"formatted_text": ""}
 
 def tokenize_function(examples, tokenizer, max_length):
