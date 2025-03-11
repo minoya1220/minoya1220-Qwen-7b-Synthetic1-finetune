@@ -8,12 +8,14 @@ transformers==4.37.2
 datasets==2.16.0
 tokenizers==0.15.1
 peft==0.8.2
+transformers_stream_generator
  
 # DeepSpeed 
 deepspeed==0.16.4
  
 # Logging and monitoring 
 wandb==0.16.3
+tensorboard==2.16.2
 
 # Other dependencies 
 numpy==1.24.3

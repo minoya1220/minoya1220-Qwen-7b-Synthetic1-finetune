@@ -61,6 +61,10 @@ def prepare_dataset(tokenizer, max_length=2048, val_split=0.05):
     dataset = load_dataset("PrimeIntellect/SYNTHETIC-1-SFT-Data")
     print(f"Dataset loaded with {len(dataset['train'])} examples")
     
+    # Early validation - check if dataset is empty
+    if len(dataset['train']) == 0:
+        raise ValueError("Dataset is empty after loading!")
+    
     # Split into train and validation
     dataset = dataset["train"].train_test_split(test_size=val_split, seed=42)
     print(f"Split into train ({len(dataset['train'])}) and validation ({len(dataset['test'])}) sets")
@@ -110,6 +114,10 @@ def prepare_dataset(tokenizer, max_length=2048, val_split=0.05):
     )
     print(f"After formatting: Train ({len(formatted_dataset['train'])}), Validation ({len(formatted_dataset['test'])})")
     
+    # Check if dataset is empty after formatting
+    if len(formatted_dataset['train']) == 0 or len(formatted_dataset['test']) == 0:
+        raise ValueError("Dataset is empty after formatting! Check the format_conversation function.")
+    
     # Tokenize the dataset
     def tokenize_function(examples):
         """Tokenize the formatted text"""
@@ -149,6 +157,10 @@ def prepare_dataset(tokenizer, max_length=2048, val_split=0.05):
         lambda example: len(example.get('input_ids', [])) >= min_length
     )
     print(f"Final dataset: Train ({len(tokenized_dataset['train'])}), Validation ({len(tokenized_dataset['test'])})")
+    
+    # Additional validation after tokenization and filtering
+    if len(tokenized_dataset['train']) == 0 or len(tokenized_dataset['test']) == 0:
+        raise ValueError("Dataset is empty after tokenization and filtering! Consider adjusting min_length or check tokenization.")
     
     return tokenized_dataset
 
