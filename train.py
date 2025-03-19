@@ -3,35 +3,46 @@ import os
 import gc
 from transformers import Trainer, TrainingArguments
 import wandb
+from torch.distributed.fsdp import (
+    FullyShardedDataParallel as FSDP,
+    MixedPrecision,
+    BackwardPrefetch,
+    ShardingStrategy,
+    FullStateDictConfig,
+    StateDictType,
+)
+from torch.distributed.fsdp.wrap import (
+    transformer_auto_wrap_policy,
+    size_based_auto_wrap_policy,
+    enable_wrap,
+    wrap,
+)
 
 from model import prepare_model
 from data import prepare_dataset, create_data_collator
 from utils import WandbCallback, print_device_info, init_wandb, create_output_dir
 
-def create_deepspeed_config(batch_size, gradient_accumulation_steps):
-    """Create DeepSpeed ZeRO-3 configuration"""
+def create_fsdp_config():
+    """Create FSDP configuration for training"""
+    bf16_policy = MixedPrecision(
+        param_dtype=torch.bfloat16,
+        reduce_dtype=torch.bfloat16,
+        buffer_dtype=torch.bfloat16,
+    )
+    
     return {
-        "zero_optimization": {
-            "stage": 3,
-            "overlap_comm": True,
-            "contiguous_gradients": True,
-            "reduce_bucket_size": 5e7,
-            "stage3_prefetch_bucket_size": 5e7,
-            "stage3_param_persistence_threshold": 1e6,
-            "gather_16bit_weights_on_model_save": True,
-            "round_robin_gradients": True
-        },
-        "bf16": {"enabled": torch.cuda.is_available()},
-        "gradient_clipping": 1.0,
-        "train_batch_size": "auto",  # Change to auto
-        "train_micro_batch_size_per_gpu": "auto",  # Change to auto
-        "gradient_accumulation_steps": "auto",  # Change to auto
-        "steps_per_print": 50,
-        "wall_clock_breakdown": False
+        "fsdp_transformer_layer_cls_to_wrap": "QWenBlock",  # Layer name specific to Qwen model
+        "fsdp_backward_prefetch": BackwardPrefetch.BACKWARD_PRE,
+        "fsdp_sharding_strategy": ShardingStrategy.FULL_SHARD,
+        "fsdp_auto_wrap_policy": size_based_auto_wrap_policy,
+        "fsdp_min_num_params": 1e6,  # Min params to wrap (1M)
+        "fsdp_state_dict_type": StateDictType.FULL_STATE_DICT,
+        "fsdp_mixed_precision": bf16_policy if torch.cuda.is_available() else None,
+        "fsdp_offload_params": False,  # Keep params on GPU
     }
 
 def create_training_args(output_dir, num_epochs, batch_size, gradient_accumulation_steps, 
-                        learning_rate, ds_config, use_wandb):
+                        learning_rate, fsdp_config, use_wandb):
     """Create training arguments"""
     return TrainingArguments(
         output_dir=output_dir,
@@ -51,7 +62,7 @@ def create_training_args(output_dir, num_epochs, batch_size, gradient_accumulati
         eval_steps=500,
         bf16=torch.cuda.is_available(),
         gradient_checkpointing=True,
-        deepspeed=ds_config,
+        fsdp=fsdp_config,
         report_to=["tensorboard", "wandb"] if use_wandb else ["tensorboard"],
         # H100-specific optimizations
         dataloader_num_workers=8,
@@ -89,11 +100,11 @@ def train(
         dataset = prepare_dataset(tokenizer, max_length, val_split)
         data_collator = create_data_collator(tokenizer, max_length)
         
-        # Configure training
-        ds_config = create_deepspeed_config(batch_size, gradient_accumulation_steps)
+        # Configure training with FSDP
+        fsdp_config = create_fsdp_config()
         training_args = create_training_args(output_dir, num_epochs, batch_size,
                                           gradient_accumulation_steps, learning_rate,
-                                          ds_config, use_wandb)
+                                          fsdp_config, use_wandb)
         
         # Setup callbacks
         callbacks = [WandbCallback()] if use_wandb else []
@@ -153,3 +164,4 @@ def train(
         torch.cuda.empty_cache()
         
         return False
+    
