@@ -4,11 +4,7 @@ import torch
 from datasets import load_dataset
 from tqdm import tqdm
 
-# Initialize counters before processing
-missing_messages_count = 0
-invalid_messages_count = 0
-short_text_count = 0
-formatting_error_count = 0
+
 
 def explore_dataset_structure():
     """Explore and print the structure of the SYNTHETIC-1 dataset in detail"""
@@ -50,16 +46,7 @@ def prepare_dataset(tokenizer, max_length=2048, val_split=0.05):
         num_proc=8,
         desc="Formatting conversations"
     )
-    
-    # Print summary instead of individual examples
-    print(f"\nDataset processing complete. Issues found:")
-    print(f"- Missing 'messages' field: {missing_messages_count} examples")
-    print(f"- Invalid messages format: {invalid_messages_count} examples")
-    print(f"- Suspiciously short text: {short_text_count} examples")
-    print(f"- Formatting errors: {formatting_error_count} examples")
-    
-    # Optionally log a few examples of each problem type for debugging
-    
+        
     # Check if any examples have empty formatted text
     empty_count_train = sum(1 for example in formatted_dataset['train'] if len(example.get('formatted_text', '')) == 0)
     if empty_count_train > 0:
@@ -84,48 +71,26 @@ def prepare_dataset(tokenizer, max_length=2048, val_split=0.05):
 
 def format_conversation(example):
     """Convert the messages format to a simple text format"""
-    # Use a global or class-level counter system
-    global missing_messages_count, invalid_messages_count, short_text_count, formatting_error_count
-    
-    try:
-        if not isinstance(example, dict) or 'messages' not in example:
-            # Increment counter instead of printing
-            missing_messages_count += 1
-            return {"formatted_text": ""}
+    formatted = ""
+    for msg in example["messages"]:
+        if not isinstance(msg, dict):
+            continue
             
-        messages = example.get('messages', [])
-        if not isinstance(messages, list) or len(messages) == 0:
-            # Increment counter instead of printing
-            invalid_messages_count += 1
-            return {"formatted_text": ""}
+        role = msg["role"]
+        content = msg["content"]
         
-        formatted = ""
-        for msg in messages:
-            if not isinstance(msg, dict):
-                continue
-                
-            role = msg["role"]
-            content = msg["content"]
-            
-            # Add proper formatting to distinguish user/assistant roles
-            if role == "user":
-                formatted += f"USER: {content}\n\n"
-            elif role == "assistant":
-                # Check if it has thinking section to preserve it
-                if "<think>" in content and "</think>" in content:
-                    formatted += f"ASSISTANT: {content}\n\n"
-                else:
-                    formatted += f"ASSISTANT: {content}\n\n"
-        
-        # Add counter for short formatted text instead of printing it
-        if len(formatted) < 10:
-            short_text_count += 1
-            
-        return {"formatted_text": formatted}
-    except Exception as e:
-        # Increment error counter instead of printing
-        formatting_error_count += 1
-        return {"formatted_text": ""}
+        # Add proper formatting to distinguish user/assistant roles
+        if role == "user":
+            formatted += f"USER: {content}\n\n"
+        elif role == "assistant":
+            # Check if it has thinking section to preserve it
+            if "<think>" in content and "</think>" in content:
+                formatted += f"ASSISTANT: {content}\n\n"
+            else:
+                formatted += f"ASSISTANT: {content}\n\n"
+
+    return {"formatted_text": formatted}
+
 
 def tokenize_function(examples, tokenizer, max_length):
     """Tokenize the formatted text"""
