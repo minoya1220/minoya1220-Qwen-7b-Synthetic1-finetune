@@ -35,6 +35,8 @@ sentencepiece==0.1.99
 protobuf==4.25.1
 wheel==0.45.1
 packaging 
+wheel
+packaging # sometimes these two dont install properly the first time idk
 flash-attn
 
 # some of these might not be necessary, i kinda just had claude auto generate this
