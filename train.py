@@ -1,7 +1,7 @@
 import torch
 import os
 import gc
-from transformers import Trainer, TrainingArguments
+from transformers import Trainer, TrainingArguments, AutoModel
 import wandb
 from torch.distributed.fsdp import (
     FullyShardedDataParallel as FSDP,
@@ -13,16 +13,16 @@ from torch.distributed.fsdp import (
 )
 from torch.distributed.fsdp.wrap import (
     transformer_auto_wrap_policy,
-    size_based_auto_wrap_policy,
     enable_wrap,
     wrap,
 )
+import functools
 
-from model import prepare_model
+from model import prepare_model, get_transformer_block_class
 from data import prepare_dataset, create_data_collator
 from utils import WandbCallback, print_device_info, init_wandb, create_output_dir
 
-def create_fsdp_config():
+def create_fsdp_config(transformer_layer_cls):
     """Create FSDP configuration for training"""
     bf16_policy = MixedPrecision(
         param_dtype=torch.bfloat16,
@@ -30,15 +30,23 @@ def create_fsdp_config():
         buffer_dtype=torch.bfloat16,
     )
     
+    # Define the transformer auto wrap policy using the provided class
+    # Ensure transformer_layer_cls is the actual class object, not a string
+    qwen_auto_wrap_policy = functools.partial(
+        transformer_auto_wrap_policy,
+        transformer_layer_cls={ transformer_layer_cls, }
+    )
+
     return {
-        "fsdp_transformer_layer_cls_to_wrap": "QWenBlock",  # Layer name specific to Qwen model
+        # "fsdp_transformer_layer_cls_to_wrap": "QWenBlock", # Replaced by policy below
         "fsdp_backward_prefetch": BackwardPrefetch.BACKWARD_PRE,
         "fsdp_sharding_strategy": ShardingStrategy.FULL_SHARD,
-        "fsdp_auto_wrap_policy": size_based_auto_wrap_policy,
-        "fsdp_min_num_params": 1e6,  # Min params to wrap (1M)
+        "fsdp_auto_wrap_policy": qwen_auto_wrap_policy, # Use transformer policy
+        # "fsdp_min_num_params": 1e6, # Not needed for transformer_auto_wrap_policy
         "fsdp_state_dict_type": StateDictType.FULL_STATE_DICT,
         "fsdp_mixed_precision": bf16_policy if torch.cuda.is_available() else None,
-        "fsdp_offload_params": False,  # Keep params on GPU
+        "fsdp_offload_params": False,
+        "fsdp_use_orig_params": True, # Recommended for HF Trainer compatibility
     }
 
 def create_training_args(output_dir, num_epochs, batch_size, gradient_accumulation_steps, 
@@ -95,13 +103,27 @@ def train(
                          max_length, gradient_accumulation_steps)
     
     try:
-        # Load model and prepare dataset
+        # Load model, tokenizer, AND the transformer block class
+        # NOTE: prepare_model in model.py needs modification to return the class
         model, tokenizer = prepare_model(model_name)
+        # Get the specific transformer block class for FSDP wrapping
+        # This function needs to be implemented in model.py
+        transformer_block_class = get_transformer_block_class(model) 
+        if transformer_block_class is None:
+             # Fallback or error if class not found
+             print("Warning: Could not identify transformer block class. FSDP might not be optimal.")
+             # Decide fallback strategy: maybe use size_based policy or raise error
+             # For now, let's assume it will be found for Qwen models
+             # You might need to import the class directly if get_transformer_block_class fails
+             # e.g., from transformers.models.qwen.modeling_qwen import QWenBlock
+             # transformer_block_class = QWenBlock 
+
         dataset = prepare_dataset(tokenizer, max_length, val_split)
-        data_collator = create_data_collator(tokenizer, max_length)
+        # Remove max_length from data_collator call
+        data_collator = create_data_collator(tokenizer) 
         
-        # Configure training with FSDP
-        fsdp_config = create_fsdp_config()
+        # Configure training with FSDP, passing the block class
+        fsdp_config = create_fsdp_config(transformer_block_class) # Pass the class object
         training_args = create_training_args(output_dir, num_epochs, batch_size,
                                           gradient_accumulation_steps, learning_rate,
                                           fsdp_config, use_wandb)

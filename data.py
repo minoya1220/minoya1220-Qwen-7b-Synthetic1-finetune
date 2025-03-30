@@ -3,7 +3,7 @@ import json
 import torch
 from datasets import load_dataset
 from tqdm import tqdm
-
+from transformers import DataCollatorForLanguageModeling
 
 
 def explore_dataset_structure():
@@ -16,14 +16,18 @@ def explore_dataset_structure():
     
     # Print basic dataset info
     print(f"\nDataset splits: {list(dataset.keys())}")
-    print(f"Number of examples in train split: {len(dataset['train'])}")
     
-    # Get a sample example
-    if len(dataset['train']) > 0:
-        print("we good, train split is not empty")
-    else:
+    # Check train split
+    train_split = dataset.get("train")
+    if train_split is None:
+        print("WARNING: 'train' split not found in the dataset!")
+        return None
+    elif len(train_split) == 0:
         print("WARNING: Train split is empty!")
-    
+    else:
+        print(f"Number of examples in train split: {len(train_split)}")
+        print("Train split seems okay.")
+
     return dataset
 
 
@@ -31,65 +35,93 @@ def prepare_dataset(tokenizer, max_length=2048, val_split=0.05):
     """Prepare the SYNTHETIC-1 dataset with validation split"""
     print("\nPreparing dataset...")
     
-    # First explore the dataset structure
+    # First load and explore the dataset structure
     dataset = explore_dataset_structure()
-    
+    if dataset is None or "train" not in dataset:
+         raise ValueError("Failed to load or validate the initial dataset.")
+
+    train_dataset = dataset["train"]
+
     # Split into train and validation
-    print(val_split)
-    dataset = dataset["train"].train_test_split(test_size=val_split, seed=42)
-    print(f"Split into train ({len(dataset['train'])}) and validation ({len(dataset['test'])}) sets")
+    print(f"Splitting train data with validation size: {val_split}")
+    if len(train_dataset) == 0:
+        raise ValueError("Cannot split an empty train dataset.")
+        
+    split_dataset = train_dataset.train_test_split(test_size=val_split, seed=42)
+    print(f"Split into train ({len(split_dataset['train'])}) and validation ({len(split_dataset['test'])}) sets")
     
     # Format conversations
     print("\nFormatting conversations...")
-    formatted_dataset = dataset.map( 
+    num_cpus = os.cpu_count()
+    formatted_dataset = split_dataset.map( 
         format_conversation,
-        num_proc=8,
+        num_proc=num_cpus,
         desc="Formatting conversations"
     )
         
-    # Check if any examples have empty formatted text
-    empty_count_train = sum(1 for example in formatted_dataset['train'] if len(example.get('formatted_text', '')) == 0)
-    if empty_count_train > 0:
-        print(f"WARNING: {empty_count_train} examples in train set have empty formatted_text!")
-    
+    # Check if any examples have empty formatted text after formatting
+    def check_empty(example):
+        return len(example.get('formatted_text', '').strip()) == 0
+
+    empty_train_count = formatted_dataset['train'].filter(check_empty).num_rows
+    empty_test_count = formatted_dataset['test'].filter(check_empty).num_rows
+
+    if empty_train_count > 0:
+        print(f"WARNING: {empty_train_count} examples in train set resulted in empty formatted_text!")
+    if empty_test_count > 0:
+        print(f"WARNING: {empty_test_count} examples in test set resulted in empty formatted_text!")
+        
+    # Filter out empty examples if necessary, although tokenization might handle them
+    # formatted_dataset = formatted_dataset.filter(lambda x: len(x.get('formatted_text', '').strip()) > 0)
+    # print("Filtered out examples with empty formatted text.")
+
+
     # Tokenize the dataset
     print("\nTokenizing dataset...")
     tokenized_dataset = formatted_dataset.map(
         lambda examples: tokenize_function(examples, tokenizer, max_length),
         batched=True,
         remove_columns=formatted_dataset["train"].column_names,
-        num_proc=8,
+        num_proc=num_cpus,
         desc="Tokenizing dataset"
     )
     
-    
-    # Additional validation after tokenization and filtering
-    if len(tokenized_dataset['train']) == 0 or len(tokenized_dataset['test']) == 0:
-        raise ValueError("Dataset is empty after tokenization! Consider adjusting min_length or check tokenization.")
-    
+    # Final check for empty datasets after tokenization
+    if len(tokenized_dataset['train']) == 0:
+        raise ValueError("Train dataset is empty after tokenization! Check formatting, tokenization, or filtering steps.")
+    if len(tokenized_dataset['test']) == 0:
+        print("Warning: Test dataset is empty after tokenization.")
+
+    print("Dataset preparation finished.")
     return tokenized_dataset
+
 
 def format_conversation(example):
     """Convert the messages format to a simple text format"""
     formatted = ""
-    for msg in example["messages"]:
+    messages = example.get("messages")
+    if not isinstance(messages, list):
+        print(f"Warning: Skipping example due to missing or invalid 'messages' field: {example}")
+        return {"formatted_text": ""} 
+
+    for msg in messages:
         if not isinstance(msg, dict):
+            print(f"Warning: Skipping invalid message format (not a dict): {msg}")
             continue
-            
-        role = msg["role"]
-        content = msg["content"]
         
-        # Add proper formatting to distinguish user/assistant roles
+        role = msg.get("role")
+        content = msg.get("content")
+
+        if not isinstance(role, str) or not isinstance(content, str):
+             print(f"Warning: Skipping message with missing/invalid role or content: {msg}")
+             continue
+            
         if role == "user":
             formatted += f"USER: {content}\n\n"
         elif role == "assistant":
-            # Check if it has thinking section to preserve it
-            if "<think>" in content and "</think>" in content:
-                formatted += f"ASSISTANT: {content}\n\n"
-            else:
-                formatted += f"ASSISTANT: {content}\n\n"
+            formatted += f"ASSISTANT: {content}\n\n"
 
-    return {"formatted_text": formatted}
+    return {"formatted_text": formatted.strip()}
 
 
 def tokenize_function(examples, tokenizer, max_length):
@@ -114,68 +146,19 @@ def tokenize_function(examples, tokenizer, max_length):
         batch_size = len(examples["formatted_text"]) if isinstance(examples["formatted_text"], list) else 1
         return {"input_ids": [[]] * batch_size, "attention_mask": [[]] * batch_size}
 
+
 def create_data_collator(tokenizer, max_length=2048):
-    """Create a data collator with dynamic padding"""
-    print("\nCreating data collator...")
+    """Create a data collator for causal language modeling"""
+    print("\nCreating data collator using DataCollatorForLanguageModeling...")
     
-    def collate_fn(examples):
-        try:
-            # Check if examples are valid
-            if not examples or len(examples) == 0:
-                raise ValueError("Empty batch received")
-            
-            # Pad sequences to the same length within this batch
-            max_length_in_batch = max(len(example["input_ids"]) for example in examples)
-            
-            # Create padded tensors
-            batch = {
-                "input_ids": [],
-                "attention_mask": [],
-                "labels": []
-            }
-            
-            for example in examples:
-                # Get current lengths
-                curr_len = len(example["input_ids"])
-                padding_len = max_length_in_batch - curr_len
-                
-                # Pad if necessary
-                if padding_len > 0:
-                    input_ids = example["input_ids"] + [tokenizer.pad_token_id] * padding_len
-                    attention_mask = example["attention_mask"] + [0] * padding_len
-                else:
-                    input_ids = example["input_ids"]
-                    attention_mask = example["attention_mask"]
-                
-                # Add to batch
-                batch["input_ids"].append(torch.tensor(input_ids))
-                batch["attention_mask"].append(torch.tensor(attention_mask))
-                batch["labels"].append(torch.tensor(input_ids))  # For causal LM, labels are the same as input_ids
-            
-            # Stack tensors
-            batch["input_ids"] = torch.stack(batch["input_ids"])
-            batch["attention_mask"] = torch.stack(batch["attention_mask"])
-            batch["labels"] = torch.stack(batch["labels"])
-            
-            return batch
-        except Exception as e:
-            print(f"Error in collate function: {e}")
-            raise
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer=tokenizer,
+        mlm=False,
+    )
     
-    # Test the collator with a small batch
-    try:
-        print("Testing data collator with sample batch...")
-        sample_batch = [
-            {"input_ids": [1, 2, 3, 4], "attention_mask": [1, 1, 1, 1]},
-            {"input_ids": [5, 6, 7], "attention_mask": [1, 1, 1]},  # Different length to test padding
-        ]
-        test_batch = collate_fn(sample_batch)
-        print(f"Data collator test successful. Batch shapes: input_ids={test_batch['input_ids'].shape}, attention_mask={test_batch['attention_mask'].shape}")
-    except Exception as e:
-        print(f"Warning: Data collator test failed: {e}")
-        print("This could indicate issues during training.")
-    
-    return collate_fn
+    print("Data collator created.")
+    return data_collator
+
 
 # If you want to run this file directly for exploration
 if __name__ == "__main__":
