@@ -1,7 +1,19 @@
 import torch
 import time
 from transformers import AutoModelForCausalLM, AutoTokenizer
+# Import the specific block class for Qwen models
+from transformers.models.qwen2.modeling_qwen2 import Qwen2DecoderLayer
 from typing import Optional, Tuple
+
+def get_transformer_block_class(model):
+    """
+    Identifies and returns the specific transformer block class used by the model.
+    This is needed for FSDP's auto_wrap_policy.
+    """
+    # For Qwen-7B (likely Qwen2 architecture), the block is typically Qwen2DecoderLayer
+    # You might need to inspect the model architecture if using a different variant
+    # print(model) # Uncomment this to print model structure if unsure
+    return Qwen2DecoderLayer
 
 def prepare_model(model_name="Qwen/Qwen-7B"):
     """Load and prepare Qwen model for training with FSDP support"""
@@ -26,10 +38,10 @@ def prepare_model(model_name="Qwen/Qwen-7B"):
         torch_dtype=dtype
     )
     
-    # Identify transformer blocks for FSDP wrapping
-    # For Qwen models, the transformer blocks are typically named "QWenBlock"
+    # Identify transformer blocks for FSDP wrapping (optional now, but good for verification)
+    # For Qwen models, the transformer blocks are typically named "QWenBlock" or "Qwen2DecoderLayer"
     # This will be used by FSDP auto_wrap_policy
-    identify_transformer_blocks(model)
+    identify_transformer_blocks(model) # Keep this call for verification/debugging
     
     # Disable KV cache for training
     model.config.use_cache = False
@@ -52,27 +64,15 @@ def prepare_model(model_name="Qwen/Qwen-7B"):
     return model, tokenizer
 
 def identify_transformer_blocks(model):
-    """Print information about model structure to help with FSDP configuration"""
-    # Examine module structure to identify transformer blocks
-    print("\nIdentifying transformer blocks for FSDP wrapping:")
-    
-    # Check for Qwen-specific blocks
-    found_blocks = False
-    
+    """Helper function to print transformer block names (for debugging)."""
+    print("Inspecting model layers for transformer block class name:")
+    found_blocks = set()
     for name, module in model.named_modules():
-        if "decoder.layers" in name and "attention" in name:
-            parent_name = name.split(".attention")[0]
-            print(f"  - Found transformer block: {parent_name}")
-            found_blocks = True
-            # Only print a few examples
-            if parent_name.endswith("5"):
-                print(f"    (more blocks exist but not printed)")
-                break
-    
-    if not found_blocks:
-        print("  Warning: Could not identify transformer blocks. FSDP auto wrapping may not work correctly.")
-        print("  You may need to manually specify wrapping policy in train.py")
-    
-    # Print parameter count for reference
-    total_params = sum(p.numel() for p in model.parameters())
-    print(f"  Total parameters: {total_params/1e6:.2f}M")
+         # Check common patterns or specific class names
+         if 'block' in name.lower() or 'layer' in name.lower():
+             # Add the class name to the set to see unique types
+             found_blocks.add(module.__class__.__name__)
+    if found_blocks:
+         print(f"Identified potential transformer block classes: {found_blocks}")
+    else:
+         print("Could not automatically identify transformer block names.")
