@@ -100,8 +100,8 @@ def train(
     # Setup
     print_device_info()
     output_dir = create_output_dir(output_dir)
-    use_wandb = init_wandb(model_name, batch_size, learning_rate, num_epochs, 
-                         max_length, gradient_accumulation_steps)
+    use_wandb = False # <-- Force disable WandB for testing
+    print(f"DEBUG: WandB explicitly set to {use_wandb}")
     
     try:
         # Load model, tokenizer, AND the transformer block class
@@ -148,13 +148,18 @@ def train(
         else:
              serializable_fsdp_config = fsdp_config # Pass original if not a dict or None
 
+        # Create Training Arguments
+        # Pass the serializable config, handle potential None
+        current_fsdp_config = serializable_fsdp_config if serializable_fsdp_config else None
+        # Ensure debug_dataloader is False unless you are specifically testing that
         training_args = create_training_args(output_dir, num_epochs, batch_size,
                                           gradient_accumulation_steps, learning_rate,
-                                          serializable_fsdp_config, use_wandb) # <-- Use the serializable version
-        
-        # Setup callbacks
-        callbacks = [WandbCallback()] if use_wandb else []
-        
+                                          current_fsdp_config, use_wandb) # <-- Pass use_wandb flag here
+
+        # Setup callbacks (conditionally)
+        callbacks = [WandbCallback()] if use_wandb else [] # <-- This will now be an empty list
+        print(f"DEBUG: Callbacks list: {callbacks}")
+
         # Initialize trainer
         print("DEBUG: Initializing Trainer object...")
         trainer = Trainer(
@@ -163,12 +168,13 @@ def train(
             train_dataset=dataset["train"],
             eval_dataset=dataset["test"],
             data_collator=data_collator,
-            callbacks=callbacks
+            callbacks=callbacks # Pass the potentially empty list
         )
         print("DEBUG: Trainer object initialized.")
         
         # Train and evaluate
         print("\nStarting training...")
+        print("DEBUG: Calling trainer.train()...")
         train_result = trainer.train()
         print("DEBUG: trainer.train() finished.")
         
