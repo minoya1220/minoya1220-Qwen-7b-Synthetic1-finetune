@@ -49,18 +49,32 @@ def prepare_model(model_name="Qwen/Qwen-7B"):
     # Test model with a sample input if CUDA is available
     if torch.cuda.is_available():
         print("Testing model with sample input...")
+        try:
+            print("Moving model to GPU for testing...")
+            model.to('cuda:0') # Explicitly move model to GPU 0 for the test
+            print(f"Model is now on device: {model.device}")
+        except Exception as e:
+             print(f"Failed to move model to GPU for test: {e}")
+             # Decide if you want to skip the test or raise error
+             return model, tokenizer # Return model potentially on CPU
+
         sample_text = "Hello, I am a language model."
+        # Now model.device should be 'cuda:0' (if successful), so tokens go to GPU
         sample_tokens = tokenizer(sample_text, return_tensors="pt").to(model.device)
-        
+
         with torch.no_grad():
             start_time = time.time()
             outputs = model(input_ids=sample_tokens.input_ids, attention_mask=sample_tokens.attention_mask)
             inference_time = time.time() - start_time
-            
-            print(f"Forward pass successful in {inference_time:.2f}s")
+
+            print(f"Forward pass successful in {inference_time:.2f}s") # Should be much faster now
             print(f"Output shape: {outputs.logits.shape}")
+            # This should now report non-zero memory usage
             print(f"Max GPU memory: {torch.cuda.max_memory_allocated(0) / (1024 ** 3):.2f} GB")
-    
+
+        # Optional: Move model back to CPU if the rest of the script expects it there?
+        # model.to('cpu')
+
     return model, tokenizer
 
 def identify_transformer_blocks(model):
