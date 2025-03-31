@@ -1,7 +1,7 @@
 # PyTorch packages 
-torch==2.6.0
-torchvision==0.21.0
-accelerate==0.30.1
+torch
+torchvision
+accelerate
 
 
  
@@ -37,6 +37,6 @@ wheel==0.45.1
 packaging 
 wheel
 packaging # sometimes these two dont install properly the first time idk
-flash-attn
+flash-attn --no-build-isolation
 
 # some of these might not be necessary, i kinda just had claude auto generate this

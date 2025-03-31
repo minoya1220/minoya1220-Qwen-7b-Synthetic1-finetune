@@ -17,6 +17,7 @@ from torch.distributed.fsdp.wrap import (
     wrap,
 )
 import functools
+import enum
 
 from model import prepare_model, get_transformer_block_class
 from data import prepare_dataset, create_data_collator
@@ -124,9 +125,44 @@ def train(
         
         # Configure training with FSDP, passing the block class
         fsdp_config = create_fsdp_config(transformer_block_class) # Pass the class object
+
+        # --- START EDIT: Convert FSDP enums to strings ---
+        if fsdp_config and isinstance(fsdp_config, dict):
+            # Create a new dict to avoid modifying the original if it's used elsewhere
+            serializable_fsdp_config = {}
+            for key, value in fsdp_config.items():
+                # Check specifically for FSDP enums or general enums
+                if isinstance(value, (BackwardPrefetch, ShardingStrategy, StateDictType, MixedPrecision, enum.Enum)):
+                     # Convert the enum member to its string name
+                     # For MixedPrecision, which isn't an Enum but acts like one for logging, handle explicitly if needed,
+                     # but TrainingArguments might handle it or it might not be directly logged.
+                     # Let's focus on the standard enums first.
+                     if isinstance(value, enum.Enum):
+                         serializable_fsdp_config[key] = value.name
+                     else:
+                         # Handle other potential FSDP types if necessary,
+                         # but often they don't cause JSON issues directly in the config dict.
+                         # If MixedPrecision causes issues, you might need special handling.
+                         # For now, assume standard enums are the main problem.
+                         serializable_fsdp_config[key] = str(value) # Fallback to string representation
+
+                # Handle the auto_wrap_policy (functools.partial) - Not directly JSON serializable
+                elif key == "fsdp_auto_wrap_policy":
+                     # Represent it as a descriptive string or omit it from the serializable config
+                     # Option 1: Omit (safer for JSON)
+                     # pass # Don't include it in the serializable dict
+                     # Option 2: Descriptive string (might be useful for logs)
+                     serializable_fsdp_config[key] = f"functools.partial(<{value.func.__name__}>, ...)"
+                     print("Warning: fsdp_auto_wrap_policy converted to string for logging.")
+                else:
+                    serializable_fsdp_config[key] = value
+        else:
+             serializable_fsdp_config = fsdp_config # Pass original if not a dict or None
+        # --- END EDIT ---
+
         training_args = create_training_args(output_dir, num_epochs, batch_size,
                                           gradient_accumulation_steps, learning_rate,
-                                          fsdp_config, use_wandb)
+                                          serializable_fsdp_config, use_wandb) # <-- Use the serializable version
         
         # Setup callbacks
         callbacks = [WandbCallback()] if use_wandb else []
