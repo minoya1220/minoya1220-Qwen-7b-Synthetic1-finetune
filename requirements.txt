@@ -37,6 +37,6 @@ wheel==0.45.1
 packaging 
 wheel
 packaging # sometimes these two dont install properly the first time idk
-flash-attn --no-build-isolation
+flash-attn
 
 # some of these might not be necessary, i kinda just had claude auto generate this
